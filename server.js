@@ -7,12 +7,8 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
 
-// --- ตรวจสอบ env ที่จำเป็น ---
-console.log('ENV CHECK - DATABASE_URL:', process.env.DATABASE_URL ? 'SET ✓' : 'NOT SET ✗')
-console.log('ENV CHECK - PORT:', process.env.PORT || '(not set, using 3001)')
-console.log('ENV CHECK - NODE_ENV:', process.env.NODE_ENV || '(not set)')
 if (!process.env.DATABASE_URL) {
-  console.error('ERROR: DATABASE_URL environment variable is not set')
+  console.error('ERROR: DATABASE_URL is not set')
   process.exit(1)
 }
 
@@ -21,6 +17,7 @@ const isLocal = process.env.DATABASE_URL.includes('localhost') || process.env.DA
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: isLocal ? false : { rejectUnauthorized: false },
+  connectionTimeoutMillis: 10000,
 })
 
 const db = {
@@ -31,36 +28,6 @@ const db = {
 
 const hashPwd = pwd => createHash('sha256').update(pwd).digest('hex')
 const now = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 19).replace('T', ' ')
-
-// --- Init ตาราง ---
-try {
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS customers (
-      id SERIAL PRIMARY KEY,
-      first_name TEXT NOT NULL,
-      last_name TEXT NOT NULL,
-      created_at TEXT,
-      created_by TEXT DEFAULT ''
-    )
-  `)
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_name ON customers (first_name, last_name)`)
-  await db.query(`
-    CREATE TABLE IF NOT EXISTS users (
-      id SERIAL PRIMARY KEY,
-      username TEXT NOT NULL UNIQUE,
-      password TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'user'
-    )
-  `)
-  const adminExists = await db.one(`SELECT id FROM users WHERE username = 'AdminCL'`)
-  if (!adminExists) {
-    await db.query(`INSERT INTO users (username, password, role) VALUES ($1, $2, 'admin')`, ['AdminCL', hashPwd('CL2025')])
-  }
-  console.log('Database initialized')
-} catch (err) {
-  console.error('Database initialization failed:', err.message)
-  process.exit(1)
-}
 
 const app = express()
 const sessions = new Map()
@@ -81,12 +48,10 @@ setInterval(() => {
 app.use(cors())
 app.use(express.json())
 
-// --- Serve React build ---
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distPath = join(__dirname, 'client', 'dist')
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath))
-  console.log('Serving static files from client/dist')
 }
 
 function auth(req, res, next) {
@@ -105,6 +70,9 @@ function adminOnly(req, res, next) {
   if (req.user.role !== 'admin') return res.status(403).json({ error: 'ไม่มีสิทธิ์' })
   next()
 }
+
+// Health check (ไม่ต้องผ่าน auth)
+app.get('/health', (_req, res) => res.json({ status: 'ok' }))
 
 // --- Auth ---
 app.post('/api/auth/login', async (req, res) => {
@@ -157,10 +125,9 @@ app.get('/api/stats', auth, async (_req, res) => {
   res.json({ today: Number(today), todayByUser, week: Number(week), month: Number(month) })
 })
 
-// --- Users (admin only) ---
+// --- Users ---
 app.get('/api/users', auth, adminOnly, async (_req, res) => {
-  const users = await db.all(`SELECT id, username, role FROM users ORDER BY role DESC, username ASC`)
-  res.json(users)
+  res.json(await db.all(`SELECT id, username, role FROM users ORDER BY role DESC, username ASC`))
 })
 
 app.post('/api/users', auth, adminOnly, async (req, res) => {
@@ -171,9 +138,7 @@ app.post('/api/users', auth, adminOnly, async (req, res) => {
   try {
     const { id } = await db.one(`INSERT INTO users (username, password, role) VALUES ($1, $2, $3) RETURNING id`, [username, hashPwd(password), role])
     res.json({ id, username, role })
-  } catch {
-    res.status(400).json({ error: 'ชื่อผู้ใช้นี้มีอยู่แล้ว' })
-  }
+  } catch { res.status(400).json({ error: 'ชื่อผู้ใช้นี้มีอยู่แล้ว' }) }
 })
 
 app.delete('/api/users/:id', auth, adminOnly, async (req, res) => {
@@ -199,14 +164,10 @@ app.get('/api/customers', auth, async (req, res) => {
   const limit = Math.min(100, Math.max(1, parseInt(req.query.limit) || 50))
   const search = (req.query.search || '').trim()
   const offset = (page - 1) * limit
-
   const parts = search.split(/\s+/).filter(Boolean)
   let where, params
-
   if (parts.length >= 2) {
-    const fn = `%${parts[0]}%`
-    const ln = `%${parts.slice(1).join(' ')}%`
-    const full = `%${search}%`
+    const fn = `%${parts[0]}%`, ln = `%${parts.slice(1).join(' ')}%`, full = `%${search}%`
     where = '(first_name LIKE $1 AND last_name LIKE $2) OR first_name LIKE $3 OR last_name LIKE $4'
     params = [fn, ln, full, full]
   } else {
@@ -214,7 +175,6 @@ app.get('/api/customers', auth, async (req, res) => {
     where = 'first_name LIKE $1 OR last_name LIKE $2'
     params = [p, p]
   }
-
   const { rows: [{ count }] } = await pool.query(`SELECT COUNT(*) as count FROM customers WHERE ${where}`, params)
   const customers = await db.all(
     `SELECT * FROM customers WHERE ${where} ORDER BY first_name ASC, last_name ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
@@ -236,17 +196,13 @@ app.post('/api/customers/check-duplicates', auth, async (req, res) => {
 
 app.post('/api/customers/batch', auth, async (req, res) => {
   const list = req.body.customers
-  if (!Array.isArray(list) || list.length === 0)
-    return res.status(400).json({ error: 'ไม่มีข้อมูล' })
+  if (!Array.isArray(list) || list.length === 0) return res.status(400).json({ error: 'ไม่มีข้อมูล' })
   const client = await pool.connect()
   try {
     await client.query('BEGIN')
     const ts = now()
     for (const { first_name, last_name } of list) {
-      await client.query(
-        `INSERT INTO customers (first_name, last_name, created_by, created_at) VALUES ($1, $2, $3, $4)`,
-        [first_name, last_name, req.user.username, ts]
-      )
+      await client.query(`INSERT INTO customers (first_name, last_name, created_by, created_at) VALUES ($1, $2, $3, $4)`, [first_name, last_name, req.user.username, ts])
     }
     await client.query('COMMIT')
     broadcast()
@@ -254,9 +210,7 @@ app.post('/api/customers/batch', auth, async (req, res) => {
   } catch {
     await client.query('ROLLBACK')
     res.status(500).json({ error: 'บันทึกข้อมูลไม่สำเร็จ' })
-  } finally {
-    client.release()
-  }
+  } finally { client.release() }
 })
 
 app.post('/api/customers', auth, async (req, res) => {
@@ -275,10 +229,7 @@ app.put('/api/customers/:id', auth, adminOnly, async (req, res) => {
   const first_name = (req.body.first_name || '').trim()
   const last_name = (req.body.last_name || '').trim()
   if (!first_name || !last_name) return res.status(400).json({ error: 'กรุณากรอกชื่อและนามสกุล' })
-  const { rowCount } = await pool.query(
-    `UPDATE customers SET first_name = $1, last_name = $2 WHERE id = $3`,
-    [first_name, last_name, Number(req.params.id)]
-  )
+  const { rowCount } = await pool.query(`UPDATE customers SET first_name = $1, last_name = $2 WHERE id = $3`, [first_name, last_name, Number(req.params.id)])
   if (rowCount === 0) return res.status(404).json({ error: 'ไม่พบข้อมูล' })
   broadcast()
   res.json({ id: Number(req.params.id), first_name, last_name })
@@ -290,12 +241,46 @@ app.delete('/api/customers/:id', auth, adminOnly, async (req, res) => {
   res.json({ success: true })
 })
 
-// --- Fallback → React SPA ---
 if (fs.existsSync(distPath)) {
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) res.sendFile(join(distPath, 'index.html'))
   })
 }
 
+// --- Start server ก่อน แล้วค่อย init DB ---
 const PORT = process.env.PORT || 3001
-app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`))
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server running on port ${PORT}`)
+
+  // Init DB หลัง server ขึ้นแล้ว
+  ;(async () => {
+    try {
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS customers (
+          id SERIAL PRIMARY KEY,
+          first_name TEXT NOT NULL,
+          last_name TEXT NOT NULL,
+          created_at TEXT,
+          created_by TEXT DEFAULT ''
+        )
+      `)
+      await db.query(`CREATE INDEX IF NOT EXISTS idx_name ON customers (first_name, last_name)`)
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          username TEXT NOT NULL UNIQUE,
+          password TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'user'
+        )
+      `)
+      const adminExists = await db.one(`SELECT id FROM users WHERE username = 'AdminCL'`)
+      if (!adminExists) {
+        await db.query(`INSERT INTO users (username, password, role) VALUES ($1, $2, 'admin')`, ['AdminCL', hashPwd('CL2025')])
+      }
+      console.log('Database initialized')
+    } catch (err) {
+      console.error('Database initialization failed:', err.message)
+      process.exit(1)
+    }
+  })()
+})
