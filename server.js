@@ -8,6 +8,9 @@ import { dirname, join } from 'path'
 import fs from 'fs'
 
 // --- ตรวจสอบ env ที่จำเป็น ---
+console.log('ENV CHECK - DATABASE_URL:', process.env.DATABASE_URL ? 'SET ✓' : 'NOT SET ✗')
+console.log('ENV CHECK - PORT:', process.env.PORT || '(not set, using 3001)')
+console.log('ENV CHECK - NODE_ENV:', process.env.NODE_ENV || '(not set)')
 if (!process.env.DATABASE_URL) {
   console.error('ERROR: DATABASE_URL environment variable is not set')
   process.exit(1)
