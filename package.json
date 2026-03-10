@@ -1,0 +1,28 @@
+{
+  "name": "customerlist",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "predev": "npx kill-port 3001 5173",
+    "dev": "concurrently \"nodemon server.js\" \"npm run dev --prefix client\"",
+    "server": "nodemon server.js",
+    "client": "npm run dev --prefix client",
+    "build": "npm install --prefix client && npm run build --prefix client",
+    "start": "node server.js",
+    "install:all": "npm install && npm install --prefix client"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "cors": "^2.8.5",
+    "dotenv": "^17.3.1",
+    "express": "^4.19.2",
+    "pg": "^8.20.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.14"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
