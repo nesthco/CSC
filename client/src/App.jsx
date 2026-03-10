@@ -153,7 +153,7 @@ function UserManagement({ apiFetch, onClose }) {
   return (
     <div className="fixed inset-0 bg-stone-100 z-40 flex flex-col">
       <PageHeader title="จัดการผู้ใช้งาน" onBack={onClose} />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: '4.5rem' }}>
         <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
 
           {/* Add form */}
@@ -290,7 +290,7 @@ function Settings({ apiFetch, onClose }) {
   return (
     <div className="fixed inset-0 bg-stone-100 z-40 flex flex-col">
       <PageHeader title="ตั้งค่า" onBack={onClose} />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: '4.5rem' }}>
         <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
 
           {/* Export */}
@@ -586,17 +586,58 @@ export default function App() {
 function ActivityLog({ apiFetch, onClose }) {
   const [logs, setLogs] = useState([])
   const [todayByUser, setTodayByUser] = useState([])
+  const [weekly, setWeekly] = useState([])
 
   useEffect(() => {
     apiFetch('/api/admin/logs').then(r => r.ok && r.json()).then(d => d && setLogs(d))
     apiFetch('/api/stats').then(r => r.ok && r.json()).then(d => d && setTodayByUser(d.todayByUser || []))
+    apiFetch('/api/stats/weekly').then(r => r.ok && r.json()).then(d => d && setWeekly(d))
   }, [apiFetch])
 
   return (
     <div className="fixed inset-0 bg-stone-100 z-40 flex flex-col">
       <PageHeader title="ประวัติกิจกรรม" onBack={onClose} />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: '4.5rem' }}>
         <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
+
+          {/* Weekly leaderboard */}
+          {weekly.length > 0 && (() => {
+            const medalColor = ['text-yellow-500', 'text-slate-400', 'text-amber-600']
+            const medal = ['🥇', '🥈', '🥉']
+            const max = Number(weekly[0].count)
+            return (
+              <div className="bg-white border rounded-xl overflow-hidden">
+                <div className="px-4 py-2.5 bg-gray-50 border-b flex items-center justify-between">
+                  <span className="text-xs font-semibold text-gray-600">รายชื่อที่เพิ่ม 7 วันล่าสุด</span>
+                  <span className="text-xs text-gray-400">Top {weekly.length}</span>
+                </div>
+                <div className="divide-y">
+                  {weekly.map((u, i) => {
+                    const pct = max > 0 ? Math.round((Number(u.count) / max) * 100) : 0
+                    return (
+                      <div key={u.created_by} className="flex items-center gap-3 px-4 py-2.5">
+                        <span className={`text-sm font-bold w-5 text-center shrink-0 ${i < 3 ? medalColor[i] : 'text-gray-300'}`}>
+                          {i < 3 ? medal[i] : <span className="text-xs text-gray-400">{i + 1}</span>}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-medium text-gray-700 truncate">{u.created_by}</span>
+                            <span className="text-xs font-semibold text-gray-500 ml-2 shrink-0">{Number(u.count).toLocaleString()} รายชื่อ</span>
+                          </div>
+                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                            <div
+                              className={`h-full rounded-full ${i === 0 ? 'bg-amber-400' : i === 1 ? 'bg-slate-300' : i === 2 ? 'bg-amber-600/60' : 'bg-blue-200'}`}
+                              style={{ width: `${pct}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })()}
 
           {/* Today by user */}
           {todayByUser.length > 0 && (
@@ -659,7 +700,7 @@ function MenuPage({ auth, onNavigate, onLogout }) {
   return (
     <div className="fixed inset-0 bg-stone-100 z-40 flex flex-col">
       <PageHeader title="เมนู" onBack={() => onNavigate(null)} />
-      <main className="flex-1 overflow-y-auto">
+      <main className="flex-1 overflow-y-auto" style={{ paddingBottom: '4.5rem' }}>
         <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
 
           {/* Account info */}
@@ -946,11 +987,55 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
           </div>
         </div>
 
+        {!search && stats?.todayByUser?.length > 0 && (() => {
+          const rows = stats.todayByUser.slice(0, 5)
+          const max = Number(rows[0].count)
+          const last = rows.length - 1
+          const rankStyle = [
+            { bar: 'from-red-400 to-rose-500', badge: 'bg-red-500', icon: '🔥', label: 'text-red-600' },
+            { bar: 'from-orange-400 to-amber-400', badge: 'bg-orange-400', icon: '😅', label: 'text-orange-600' },
+            { bar: 'from-yellow-400 to-yellow-500', badge: 'bg-yellow-400', icon: '😬', label: 'text-yellow-600' },
+            { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
+            { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
+          ]
+          return (
+            <div className="mb-3 rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
+              <div className="bg-gradient-to-r from-stone-800 to-stone-700 px-4 py-2.5 flex items-center justify-between">
+                <span className="text-xs font-semibold text-amber-300 tracking-wide uppercase">ปริมาณรายชื่อวันนี้</span>
+                <span className="text-xs text-stone-400">{rows.length} คน</span>
+              </div>
+              <div className="bg-white divide-y divide-stone-100">
+                {rows.map((u, i) => {
+                  const pct = max > 0 ? Math.round((Number(u.count) / max) * 100) : 0
+                  const isWinner = i === last
+                  const s = rankStyle[i] || rankStyle[4]
+                  return (
+                    <div key={u.created_by} className={`px-4 py-3 ${isWinner ? 'bg-emerald-50' : ''}`}>
+                      <div className="flex items-center gap-3 mb-1.5">
+                        <span className={`w-6 h-6 rounded-full ${isWinner ? 'bg-emerald-500' : s.badge} text-white text-xs font-bold flex items-center justify-center shrink-0`}>
+                          {isWinner ? '🏆' : (s.icon || i + 1)}
+                        </span>
+                        <span className={`flex-1 text-sm font-semibold truncate ${isWinner ? 'text-emerald-700' : 'text-stone-700'}`}>{u.created_by}</span>
+                        <span className={`text-sm font-bold shrink-0 ${isWinner ? 'text-emerald-600' : s.label}`}>{Number(u.count).toLocaleString()}</span>
+                      </div>
+                      <div className="h-2 bg-stone-100 rounded-full overflow-hidden ml-9">
+                        <div
+                          className={`h-full rounded-full bg-gradient-to-r ${isWinner ? 'from-emerald-400 to-green-500' : s.bar} transition-all`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )
+        })()}
+
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-0.5">
           <div className="text-sm text-gray-500">
             {!search ? (
               <>เพิ่มวันนี้ <span className="font-semibold text-gray-700">{total.toLocaleString()}</span> รายชื่อ · จากทั้งหมด <span className="font-semibold text-gray-700">{grandTotal.toLocaleString()}</span> รายชื่อ</>
-
             ) : (
               <>พบ <span className="font-semibold text-gray-700">{total.toLocaleString()}</span> รายชื่อ · ค้นหา "{search}"</>
             )}
@@ -1058,7 +1143,7 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
       )}
 
       {/* Bottom Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-stone-900 border-t border-stone-700 shadow-lg z-30 flex">
+      <nav className="fixed bottom-0 left-0 right-0 bg-stone-900 border-t border-stone-700 shadow-lg z-[45] flex">
         <button
           onClick={() => setActivePage(null)}
           className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 ${activePage === null ? 'text-amber-500' : 'text-stone-400 hover:text-amber-500'}`}
@@ -1069,7 +1154,7 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
           <span className="text-xs font-medium">หน้าหลัก</span>
         </button>
 
-        <button onClick={openAdd} className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-stone-400 hover:text-amber-500 active:text-amber-400">
+        <button onClick={() => { setActivePage(null); openAdd() }} className="flex-1 flex flex-col items-center justify-center py-2 gap-0.5 text-stone-400 hover:text-amber-500 active:text-amber-400">
           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3m0 0v3m0-3h3m-3 0H9m12 0a9 9 0 11-18 0 9 9 0 0118 0z" />
           </svg>
@@ -1078,7 +1163,7 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
 
         <button
           onClick={() => setActivePage('menu')}
-          className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 ${activePage === 'menu' ? 'text-amber-500' : 'text-stone-400 hover:text-amber-500'}`}
+          className={`flex-1 flex flex-col items-center justify-center py-2 gap-0.5 ${['menu', 'users', 'settings', 'activity'].includes(activePage) ? 'text-amber-500' : 'text-stone-400 hover:text-amber-500'}`}
         >
           <svg className="w-6 h-6" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />

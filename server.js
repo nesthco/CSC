@@ -159,6 +159,19 @@ app.get('/api/stats', auth, h(async (_req, res) => {
   res.json({ today: Number(today), todayByUser, week: Number(week), month: Number(month) })
 }))
 
+// --- 7-day leaderboard ---
+app.get('/api/stats/weekly', auth, h(async (_req, res) => {
+  const rows = await db.all(`
+    SELECT created_by, COUNT(*) as count FROM customers
+    WHERE created_at >= TO_CHAR(
+      DATE_TRUNC('day', NOW() AT TIME ZONE 'Asia/Bangkok' - INTERVAL '6 days'),
+      'YYYY-MM-DD HH24:MI:SS'
+    ) AND created_by != ''
+    GROUP BY created_by ORDER BY count DESC LIMIT 10
+  `)
+  res.json(rows)
+}))
+
 // --- Users ---
 app.get('/api/users', auth, adminOnly, h(async (_req, res) => {
   res.json(await db.all(`SELECT id, username, role FROM users ORDER BY role DESC, username ASC`))
