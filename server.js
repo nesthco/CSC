@@ -7,10 +7,17 @@ import { fileURLToPath } from 'url'
 import { dirname, join } from 'path'
 import fs from 'fs'
 
+// --- ตรวจสอบ env ที่จำเป็น ---
+if (!process.env.DATABASE_URL) {
+  console.error('ERROR: DATABASE_URL environment variable is not set')
+  process.exit(1)
+}
+
 const { Pool } = pg
+const isLocal = process.env.DATABASE_URL.includes('localhost') || process.env.DATABASE_URL.includes('127.0.0.1')
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
+  ssl: isLocal ? false : { rejectUnauthorized: false },
 })
 
 const db = {
@@ -20,33 +27,36 @@ const db = {
 }
 
 const hashPwd = pwd => createHash('sha256').update(pwd).digest('hex')
-// เก็บเวลาในโซน Bangkok (UTC+7)
 const now = () => new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 19).replace('T', ' ')
 
-// สร้างตารางถ้ายังไม่มี
-await db.query(`
-  CREATE TABLE IF NOT EXISTS customers (
-    id SERIAL PRIMARY KEY,
-    first_name TEXT NOT NULL,
-    last_name TEXT NOT NULL,
-    created_at TEXT,
-    created_by TEXT DEFAULT ''
-  )
-`)
-await db.query(`CREATE INDEX IF NOT EXISTS idx_name ON customers (first_name, last_name)`)
-await db.query(`
-  CREATE TABLE IF NOT EXISTS users (
-    id SERIAL PRIMARY KEY,
-    username TEXT NOT NULL UNIQUE,
-    password TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'user'
-  )
-`)
-
-// สร้าง admin เริ่มต้นถ้ายังไม่มี
-const adminExists = await db.one(`SELECT id FROM users WHERE username = 'AdminCL'`)
-if (!adminExists) {
-  await db.query(`INSERT INTO users (username, password, role) VALUES ($1, $2, 'admin')`, ['AdminCL', hashPwd('CL2025')])
+// --- Init ตาราง ---
+try {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS customers (
+      id SERIAL PRIMARY KEY,
+      first_name TEXT NOT NULL,
+      last_name TEXT NOT NULL,
+      created_at TEXT,
+      created_by TEXT DEFAULT ''
+    )
+  `)
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_name ON customers (first_name, last_name)`)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      password TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'user'
+    )
+  `)
+  const adminExists = await db.one(`SELECT id FROM users WHERE username = 'AdminCL'`)
+  if (!adminExists) {
+    await db.query(`INSERT INTO users (username, password, role) VALUES ($1, $2, 'admin')`, ['AdminCL', hashPwd('CL2025')])
+  }
+  console.log('Database initialized')
+} catch (err) {
+  console.error('Database initialization failed:', err.message)
+  process.exit(1)
 }
 
 const app = express()
@@ -68,11 +78,12 @@ setInterval(() => {
 app.use(cors())
 app.use(express.json())
 
-// Serve React build (production)
+// --- Serve React build ---
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distPath = join(__dirname, 'client', 'dist')
 if (fs.existsSync(distPath)) {
   app.use(express.static(distPath))
+  console.log('Serving static files from client/dist')
 }
 
 function auth(req, res, next) {
@@ -276,7 +287,7 @@ app.delete('/api/customers/:id', auth, adminOnly, async (req, res) => {
   res.json({ success: true })
 })
 
-// Fallback → React SPA
+// --- Fallback → React SPA ---
 if (fs.existsSync(distPath)) {
   app.get('*', (req, res) => {
     if (!req.path.startsWith('/api')) res.sendFile(join(distPath, 'index.html'))
@@ -284,4 +295,4 @@ if (fs.existsSync(distPath)) {
 }
 
 const PORT = process.env.PORT || 3001
-app.listen(PORT, () => console.log(`Server: http://localhost:${PORT}`))
+app.listen(PORT, '0.0.0.0', () => console.log(`Server running on port ${PORT}`))
