@@ -490,6 +490,70 @@ export default function App() {
   return <CustomerApp auth={auth} apiFetch={apiFetch} onLogout={handleLogout} />
 }
 
+function ActivityLog({ apiFetch, onClose }) {
+  const [logs, setLogs] = useState([])
+  const [online, setOnline] = useState({ count: 0, users: [] })
+
+  useEffect(() => {
+    apiFetch('/api/admin/logs').then(r => r.ok && r.json()).then(d => d && setLogs(d))
+    apiFetch('/api/online').then(r => r.ok && r.json()).then(d => d && setOnline(d))
+  }, [apiFetch])
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6 flex flex-col max-h-[90vh]">
+        <h2 className="text-lg font-semibold mb-4">กิจกรรมผู้ใช้งาน</h2>
+
+        {/* ออนไลน์อยู่ */}
+        <div className="bg-green-50 border border-green-200 rounded-lg px-4 py-3 mb-4">
+          <p className="text-xs font-medium text-green-700 mb-1">ออนไลน์อยู่ตอนนี้ ({online.count} คน)</p>
+          <div className="flex flex-wrap gap-1.5">
+            {online.users.length === 0
+              ? <span className="text-xs text-green-500">ไม่มีผู้ใช้ออนไลน์</span>
+              : online.users.map(u => (
+                <span key={u} className="text-xs bg-green-200 text-green-800 px-2 py-0.5 rounded-full">{u}</span>
+              ))
+            }
+          </div>
+        </div>
+
+        {/* Log table */}
+        <div className="flex-1 overflow-y-auto border rounded-lg">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 border-b sticky top-0">
+              <tr>
+                <th className="text-left px-3 py-2 text-gray-500 font-medium">ผู้ใช้</th>
+                <th className="text-left px-3 py-2 text-gray-500 font-medium">กิจกรรม</th>
+                <th className="text-left px-3 py-2 text-gray-500 font-medium">เวลา</th>
+              </tr>
+            </thead>
+            <tbody>
+              {logs.length === 0
+                ? <tr><td colSpan={3} className="text-center py-6 text-gray-400">ยังไม่มีกิจกรรม</td></tr>
+                : logs.map(log => (
+                  <tr key={log.id} className="border-t">
+                    <td className="px-3 py-1.5 font-medium text-gray-700">{log.username}</td>
+                    <td className="px-3 py-1.5">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${log.action === 'login' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                        {log.action === 'login' ? 'เข้าสู่ระบบ' : 'ออกจากระบบ'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-gray-500">{log.created_at}</td>
+                  </tr>
+                ))
+              }
+            </tbody>
+          </table>
+        </div>
+
+        <div className="flex justify-end mt-4">
+          <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">ปิด</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CustomerApp({ auth, apiFetch, onLogout }) {
   const [customers, setCustomers] = useState([])
   const [total, setTotal] = useState(0)
@@ -506,6 +570,8 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
   const [showUsers, setShowUsers] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false)
+  const [showActivityLog, setShowActivityLog] = useState(false)
+  const [onlineCount, setOnlineCount] = useState(0)
   const [stats, setStats] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
   const searchRef = useRef(null)
@@ -539,14 +605,16 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
 
   useEffect(() => { focusSearch() }, [])
 
-  // SSE: รับ push event จาก server ทันทีที่มีการเปลี่ยนแปลง
+  // SSE: รับ push event จาก server
   useEffect(() => {
     fetchStats()
+    apiFetch('/api/online').then(r => r.ok && r.json()).then(d => d && setOnlineCount(d.count))
     const es = new EventSource(`/api/events?token=${auth.token}`)
     es.addEventListener('update', () => { fetchCustomers(); fetchStats() })
+    es.addEventListener('online', e => { setOnlineCount(JSON.parse(e.data).count) })
     es.onerror = () => es.close()
     return () => es.close()
-  }, [auth.token, fetchCustomers, fetchStats])
+  }, [auth.token, fetchCustomers, fetchStats, apiFetch])
 
   useEffect(() => {
     const t = setTimeout(() => { setSearch(searchInput); setPage(1) }, 400)
@@ -643,7 +711,7 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
                 className="absolute right-11 top-0 bottom-0 flex items-center px-3 text-xs font-medium text-gray-400 hover:text-red-500"
                 title="ล้างการค้นหา"
               >
-                CLEAR
+                ล้างการค้นหา
               </button>
             )}
             <button
@@ -755,6 +823,20 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
       {showSettings && (
         <Settings apiFetch={apiFetch} onClose={() => setShowSettings(false)} />
       )}
+
+      {showActivityLog && (
+        <ActivityLog apiFetch={apiFetch} onClose={() => setShowActivityLog(false)} />
+      )}
+
+      {/* Floating online badge */}
+      <button
+        onClick={() => auth.role === 'admin' && setShowActivityLog(true)}
+        className="fixed bottom-20 right-4 z-30 bg-stone-800 text-green-400 rounded-full px-3 py-1.5 text-xs flex items-center gap-1.5 shadow-lg"
+        title={auth.role === 'admin' ? 'ดูกิจกรรมผู้ใช้งาน' : undefined}
+      >
+        <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse inline-block" />
+        {onlineCount} คนออนไลน์
+      </button>
 
       {showLogoutConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
