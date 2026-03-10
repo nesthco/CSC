@@ -34,18 +34,18 @@ const h = fn => (req, res, next) => Promise.resolve(fn(req, res, next)).catch(ne
 
 const app = express()
 const sessions = new Map()
-const sseClients = new Set()
+const sseClients = new Map() // res → username
 const SESSION_TTL = 72 * 60 * 60 * 1000
 
-function broadcast() {
-  for (const client of sseClients) client.write('event: update\ndata: {}\n\n')
+function broadcast(payload = {}) {
+  const data = JSON.stringify(payload)
+  for (const client of sseClients.keys()) client.write(`event: update\ndata: ${data}\n\n`)
 }
 
 function broadcastOnline() {
-  const t = Date.now()
-  const users = [...sessions.values()].filter(s => t <= s.expiresAt).map(s => s.username)
+  const users = [...new Set(sseClients.values())]
   const data = JSON.stringify({ count: users.length, users })
-  for (const client of sseClients) client.write(`event: online\ndata: ${data}\n\n`)
+  for (const client of sseClients.keys()) client.write(`event: online\ndata: ${data}\n\n`)
 }
 
 setInterval(() => {
@@ -91,7 +91,7 @@ app.get('/api/online', auth, h(async (_req, res) => {
 }))
 
 // --- Activity logs (admin only) ---
-app.get('/api/admin/logs', auth, adminOnly, h(async (_req, res) => {
+app.get('/api/admin/logs', auth, h(async (_req, res) => {
   const logs = await db.all(`
     SELECT * FROM activity_logs
     WHERE created_at >= TO_CHAR(NOW() AT TIME ZONE 'Asia/Bangkok' - INTERVAL '7 days', 'YYYY-MM-DD HH24:MI:SS')
@@ -127,9 +127,10 @@ app.get('/api/events', auth, (req, res) => {
   res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', 'Connection': 'keep-alive' })
   res.flushHeaders()
   res.write('event: connected\ndata: {}\n\n')
-  sseClients.add(res)
+  sseClients.set(res, req.user.username)
+  broadcastOnline()
   const ping = setInterval(() => res.write(':ping\n\n'), 25000)
-  req.on('close', () => { sseClients.delete(res); clearInterval(ping) })
+  req.on('close', () => { sseClients.delete(res); clearInterval(ping); broadcastOnline() })
 })
 
 // --- Stats ---
@@ -264,7 +265,7 @@ app.post('/api/customers/batch', auth, h(async (req, res) => {
       await client.query(`INSERT INTO customers (first_name, last_name, created_by, created_at) VALUES ($1, $2, $3, $4)`, [first_name, last_name, req.user.username, ts])
     }
     await client.query('COMMIT')
-    broadcast()
+    broadcast({ by: req.user.username, added: list.length })
     res.json({ success: true, count: list.length })
   } catch {
     await client.query('ROLLBACK')
@@ -280,7 +281,7 @@ app.post('/api/customers', auth, h(async (req, res) => {
     `INSERT INTO customers (first_name, last_name, created_by, created_at) VALUES ($1, $2, $3, $4) RETURNING id`,
     [first_name, last_name, req.user.username, now()]
   )
-  broadcast()
+  broadcast({ by: req.user.username, added: 1 })
   res.json({ id, first_name, last_name })
 }))
 

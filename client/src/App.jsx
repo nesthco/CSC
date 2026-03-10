@@ -7,22 +7,17 @@ const LIMIT = 50
 function StatsBar({ stats }) {
   if (!stats) return null
 
-  const userParts = stats.todayByUser.length > 0
-    ? stats.todayByUser.map(u => `${u.created_by} เพิ่ม ${u.count.toLocaleString()} รายชื่อ`).join('  ·  ')
-    : 'ยังไม่มีการเพิ่มข้อมูลวันนี้'
-
   const text = [
     `วันนี้  ${stats.today.toLocaleString()} รายชื่อ`,
-    userParts,
     `สัปดาห์นี้  ${stats.week.toLocaleString()} รายชื่อ`,
     `เดือนนี้  ${stats.month.toLocaleString()} รายชื่อ`,
-  ].join('     ✦     ')
+  ].join('          ✦          ')
 
   return (
     <div className="bg-red-950 text-amber-200 text-xs py-1.5 overflow-hidden select-none">
-      <div style={{ display: 'flex', animation: 'marquee 35s linear infinite', willChange: 'transform' }}>
-        <span className="whitespace-nowrap px-16">{text}</span>
-        <span className="whitespace-nowrap px-16" aria-hidden>{text}</span>
+      <div style={{ display: 'flex', animation: 'marquee 45s linear infinite', willChange: 'transform' }}>
+        <span className="whitespace-nowrap px-20">{text}</span>
+        <span className="whitespace-nowrap px-20" aria-hidden>{text}</span>
       </div>
     </div>
   )
@@ -590,11 +585,11 @@ export default function App() {
 
 function ActivityLog({ apiFetch, onClose }) {
   const [logs, setLogs] = useState([])
-  const [online, setOnline] = useState({ count: 0, users: [] })
+  const [todayByUser, setTodayByUser] = useState([])
 
   useEffect(() => {
     apiFetch('/api/admin/logs').then(r => r.ok && r.json()).then(d => d && setLogs(d))
-    apiFetch('/api/online').then(r => r.ok && r.json()).then(d => d && setOnline(d))
+    apiFetch('/api/stats').then(r => r.ok && r.json()).then(d => d && setTodayByUser(d.todayByUser || []))
   }, [apiFetch])
 
   return (
@@ -603,18 +598,24 @@ function ActivityLog({ apiFetch, onClose }) {
       <main className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
 
-          {/* ออนไลน์อยู่ */}
-          <div className="bg-white border rounded-xl px-4 py-3">
-            <p className="text-xs font-medium text-green-700 mb-1">ออนไลน์อยู่ตอนนี้ ({online.count} คน)</p>
-            <div className="flex flex-wrap gap-1.5">
-              {online.users.length === 0
-                ? <span className="text-xs text-gray-400">ไม่มีผู้ใช้ออนไลน์</span>
-                : online.users.map(u => (
-                  <span key={u} className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded-full">{u}</span>
-                ))
-              }
+          {/* Today by user */}
+          {todayByUser.length > 0 && (
+            <div className="bg-white border rounded-xl overflow-hidden">
+              <div className="px-3 py-2 bg-gray-50 border-b">
+                <span className="text-xs font-medium text-gray-500">เพิ่มรายชื่อวันนี้</span>
+              </div>
+              <table className="w-full text-xs">
+                <tbody>
+                  {todayByUser.map((u, i) => (
+                    <tr key={i} className={i > 0 ? 'border-t' : ''}>
+                      <td className="px-3 py-2 font-medium text-gray-700">{u.created_by}</td>
+                      <td className="px-3 py-2 text-right text-gray-500">{Number(u.count).toLocaleString()} รายชื่อ</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
+          )}
 
           {/* Log table */}
           <div className="bg-white border rounded-xl overflow-hidden">
@@ -693,6 +694,27 @@ function MenuPage({ auth, onNavigate, onLogout }) {
             )}
           </div>
 
+          {/* Activity (all users) */}
+          <div className="bg-white border rounded-xl overflow-hidden">
+            <div className="px-4 py-2 bg-gray-50 border-b">
+              <span className="text-xs text-gray-500 font-medium uppercase tracking-wide">กิจกรรม</span>
+            </div>
+            <button
+              onClick={() => onNavigate('activity')}
+              className="w-full flex items-center justify-between px-4 py-3 text-sm text-gray-700 hover:bg-amber-50"
+            >
+              <div className="flex items-center gap-3">
+                <svg className="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+                ประวัติกิจกรรม
+              </div>
+              <svg className="w-4 h-4 text-gray-300" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </button>
+          </div>
+
           {/* Admin tools */}
           {auth.role === 'admin' && (
             <div className="bg-white border rounded-xl overflow-hidden">
@@ -701,7 +723,6 @@ function MenuPage({ auth, onNavigate, onLogout }) {
               </div>
               {[
                 { label: 'ผู้ใช้งาน', page: 'users', icon: 'M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z' },
-                { label: 'ประวัติกิจกรรม', page: 'activity', icon: 'M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01' },
                 { label: 'ตั้งค่า', page: 'settings', icon: 'M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z' },
               ].map(({ label, page, icon }) => (
                 <button
@@ -745,6 +766,8 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
   const [activePage, setActivePage] = useState(null) // null | 'menu' | 'users' | 'activity' | 'settings'
   const [stats, setStats] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(null)
+  const [online, setOnline] = useState({ count: 0, users: [] })
+  const [toasts, setToasts] = useState([])
   const searchRef = useRef(null)
 
   const focusSearch = () => setTimeout(() => searchRef.current?.focus(), 50)
@@ -780,9 +803,22 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
   useEffect(() => {
     fetchStats()
     const es = new EventSource(`/api/events?token=${auth.token}`)
-    es.addEventListener('update', () => { fetchCustomers(); fetchStats() })
+    es.addEventListener('update', e => {
+      fetchCustomers(); fetchStats()
+      try {
+        const data = JSON.parse(e.data)
+        if (data.by && data.by !== auth.username && data.added) {
+          const id = Date.now()
+          setToasts(prev => [...prev, { id, msg: `${data.by} เพิ่ม ${data.added} รายชื่อ` }])
+          setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 9000)
+        }
+      } catch { /* ignore */ }
+    })
+    es.addEventListener('online', e => {
+      try { setOnline(JSON.parse(e.data)) } catch { /* ignore */ }
+    })
     return () => es.close()
-  }, [auth.token, fetchCustomers, fetchStats])
+  }, [auth.token, auth.username, fetchCustomers, fetchStats])
 
   useEffect(() => {
     const t = setTimeout(() => { setSearch(searchInput); setPage(1) }, 400)
@@ -863,6 +899,13 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
       </header>
 
       <main className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6" style={{ paddingBottom: '4.5rem' }}>
+        {online.users.length > 0 && (
+          <div className="flex items-center gap-2 mb-4">
+            <span className="w-2 h-2 rounded-full bg-green-400 shrink-0 animate-pulse"></span>
+            <span className="text-xs text-stone-400 shrink-0">คนที่ออนไลน์ตอนนี้ —</span>
+            <span className="text-xs text-stone-600 font-medium">{online.users.join(' · ')}</span>
+          </div>
+        )}
         <div className="mb-4">
           <div className="relative w-full">
             <input
@@ -995,6 +1038,17 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
       )}
       {activePage === 'activity' && (
         <ActivityLog apiFetch={apiFetch} onClose={() => setActivePage('menu')} />
+      )}
+
+      {/* Toast notifications */}
+      {toasts.length > 0 && (
+        <div className="fixed bottom-20 left-0 right-0 z-50 flex flex-col items-end gap-2 px-4 pointer-events-none">
+          {toasts.map(t => (
+            <div key={t.id} className="toast-enter bg-stone-800/90 text-white text-sm px-4 py-2 rounded-full shadow-lg backdrop-blur-sm">
+              {t.msg}
+            </div>
+          ))}
+        </div>
       )}
 
       {/* Bottom Navigation Bar */}
