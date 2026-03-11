@@ -602,34 +602,41 @@ function ActivityLog({ apiFetch, onClose }) {
 
           {/* Weekly leaderboard */}
           {weekly.length > 0 && (() => {
-            const medalColor = ['text-yellow-500', 'text-slate-400', 'text-amber-600']
-            const medal = ['🥇', '🥈', '🥉']
-            const max = Number(weekly[0].count)
+            const rows = weekly
+            const max = Number(rows[0].count)
+            const last = rows.length - 1
+            const rankStyle = [
+              { bar: 'from-red-400 to-rose-500', badge: 'bg-red-500', icon: '🔥', label: 'text-red-600' },
+              { bar: 'from-orange-400 to-amber-400', badge: 'bg-orange-400', icon: '😅', label: 'text-orange-600' },
+              { bar: 'from-yellow-400 to-yellow-500', badge: 'bg-yellow-400', icon: '😬', label: 'text-yellow-600' },
+              { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
+              { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
+            ]
             return (
-              <div className="bg-white border rounded-xl overflow-hidden">
-                <div className="px-4 py-2.5 bg-gray-50 border-b flex items-center justify-between">
-                  <span className="text-xs font-semibold text-gray-600">รายชื่อที่เพิ่ม 7 วันล่าสุด</span>
-                  <span className="text-xs text-gray-400">Top {weekly.length}</span>
+              <div className="rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
+                <div className="bg-gradient-to-r from-stone-800 to-stone-700 px-4 py-2.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-amber-300 tracking-wide uppercase">ปริมาณรายชื่อ 7 วันล่าสุด</span>
+                  <span className="text-xs text-stone-400">{rows.length} คน</span>
                 </div>
-                <div className="divide-y">
-                  {weekly.map((u, i) => {
+                <div className="bg-white divide-y divide-stone-100">
+                  {rows.map((u, i) => {
                     const pct = max > 0 ? Math.round((Number(u.count) / max) * 100) : 0
+                    const isWinner = i === last
+                    const s = rankStyle[i] || rankStyle[4]
                     return (
-                      <div key={u.created_by} className="flex items-center gap-3 px-4 py-2.5">
-                        <span className={`text-sm font-bold w-5 text-center shrink-0 ${i < 3 ? medalColor[i] : 'text-gray-300'}`}>
-                          {i < 3 ? medal[i] : <span className="text-xs text-gray-400">{i + 1}</span>}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-sm font-medium text-gray-700 truncate">{u.created_by}</span>
-                            <span className="text-xs font-semibold text-gray-500 ml-2 shrink-0">{Number(u.count).toLocaleString()} รายชื่อ</span>
-                          </div>
-                          <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                            <div
-                              className={`h-full rounded-full ${i === 0 ? 'bg-amber-400' : i === 1 ? 'bg-slate-300' : i === 2 ? 'bg-amber-600/60' : 'bg-blue-200'}`}
-                              style={{ width: `${pct}%` }}
-                            />
-                          </div>
+                      <div key={u.created_by} className={`px-4 py-3 ${isWinner ? 'bg-emerald-50' : ''}`}>
+                        <div className="flex items-center gap-3 mb-1.5">
+                          <span className={`w-6 h-6 rounded-full ${isWinner ? 'bg-emerald-500' : s.badge} text-white text-xs font-bold flex items-center justify-center shrink-0`}>
+                            {isWinner ? '🏆' : (s.icon || i + 1)}
+                          </span>
+                          <span className={`flex-1 text-sm font-semibold truncate ${isWinner ? 'text-emerald-700' : 'text-stone-700'}`}>{u.created_by}</span>
+                          <span className={`text-sm font-bold shrink-0 ${isWinner ? 'text-emerald-600' : s.label}`}>{Number(u.count).toLocaleString()}</span>
+                        </div>
+                        <div className="h-2 bg-stone-100 rounded-full overflow-hidden ml-9">
+                          <div
+                            className={`h-full rounded-full bg-gradient-to-r ${isWinner ? 'from-emerald-400 to-green-500' : s.bar} transition-all`}
+                            style={{ width: `${pct}%` }}
+                          />
                         </div>
                       </div>
                     )
@@ -640,23 +647,50 @@ function ActivityLog({ apiFetch, onClose }) {
           })()}
 
           {/* Today by user */}
-          {todayByUser.length > 0 && (
-            <div className="bg-white border rounded-xl overflow-hidden">
-              <div className="px-3 py-2 bg-gray-50 border-b">
-                <span className="text-xs font-medium text-gray-500">เพิ่มรายชื่อวันนี้</span>
+          {todayByUser.length > 0 && (() => {
+            const rows = todayByUser
+            const max = Number(rows[0].count)
+            const last = rows.length - 1
+            const rankStyle = [
+              { bar: 'from-red-400 to-rose-500', badge: 'bg-red-500', icon: '🔥', label: 'text-red-600' },
+              { bar: 'from-orange-400 to-amber-400', badge: 'bg-orange-400', icon: '😅', label: 'text-orange-600' },
+              { bar: 'from-yellow-400 to-yellow-500', badge: 'bg-yellow-400', icon: '😬', label: 'text-yellow-600' },
+              { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
+              { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
+            ]
+            return (
+              <div className="rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
+                <div className="bg-gradient-to-r from-stone-800 to-stone-700 px-4 py-2.5 flex items-center justify-between">
+                  <span className="text-xs font-semibold text-amber-300 tracking-wide uppercase">ปริมาณรายชื่อวันนี้</span>
+                  <span className="text-xs text-stone-400">{rows.length} คน</span>
+                </div>
+                <div className="bg-white divide-y divide-stone-100">
+                  {rows.map((u, i) => {
+                    const pct = max > 0 ? Math.round((Number(u.count) / max) * 100) : 0
+                    const isWinner = i === last
+                    const s = rankStyle[i] || rankStyle[4]
+                    return (
+                      <div key={u.created_by} className={`px-4 py-3 ${isWinner ? 'bg-emerald-50' : ''}`}>
+                        <div className="flex items-center gap-3 mb-1.5">
+                          <span className={`w-6 h-6 rounded-full ${isWinner ? 'bg-emerald-500' : s.badge} text-white text-xs font-bold flex items-center justify-center shrink-0`}>
+                            {isWinner ? '🏆' : (s.icon || i + 1)}
+                          </span>
+                          <span className={`flex-1 text-sm font-semibold truncate ${isWinner ? 'text-emerald-700' : 'text-stone-700'}`}>{u.created_by}</span>
+                          <span className={`text-sm font-bold shrink-0 ${isWinner ? 'text-emerald-600' : s.label}`}>{Number(u.count).toLocaleString()}</span>
+                        </div>
+                        <div className="h-2 bg-stone-100 rounded-full overflow-hidden ml-9">
+                          <div
+                            className={`h-full rounded-full bg-gradient-to-r ${isWinner ? 'from-emerald-400 to-green-500' : s.bar} transition-all`}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
               </div>
-              <table className="w-full text-xs">
-                <tbody>
-                  {todayByUser.map((u, i) => (
-                    <tr key={i} className={i > 0 ? 'border-t' : ''}>
-                      <td className="px-3 py-2 font-medium text-gray-700">{u.created_by}</td>
-                      <td className="px-3 py-2 text-right text-gray-500">{Number(u.count).toLocaleString()} รายชื่อ</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Log table */}
           <div className="bg-white border rounded-xl overflow-hidden">
