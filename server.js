@@ -239,17 +239,20 @@ app.get('/api/customers', auth, h(async (req, res) => {
 
   if (!search) {
     const offset = (page - 1) * limit
-    const { rows: [{ count: todayCount }] } = await pool.query(`
-      SELECT COUNT(*) as count FROM customers
-      WHERE LEFT(created_at, 10) = TO_CHAR(NOW() AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD')
-    `)
-    const { rows: [{ count: allCount }] } = await pool.query(`SELECT COUNT(*) as count FROM customers`)
-    const customers = await db.all(`
-      SELECT * FROM customers
-      WHERE LEFT(created_at, 10) = TO_CHAR(NOW() AT TIME ZONE 'Asia/Bangkok', 'YYYY-MM-DD')
-      ORDER BY id DESC LIMIT $1 OFFSET $2
-    `, [limit, offset])
-    return res.json({ customers, total: Number(todayCount), grandTotal: Number(allCount), page, limit, recent: true })
+    const today = new Date(Date.now() + 7 * 3600000).toISOString().slice(0, 10)
+    const tomorrow = new Date(Date.now() + 7 * 3600000 + 86400000).toISOString().slice(0, 10)
+    const [todayRows, allRow] = await Promise.all([
+      db.all(
+        `SELECT *, COUNT(*) OVER() as _total FROM customers
+         WHERE created_at >= $1 AND created_at < $2
+         ORDER BY id DESC LIMIT $3 OFFSET $4`,
+        [today, tomorrow, limit, offset]
+      ),
+      db.one(`SELECT COUNT(*) as count FROM customers`)
+    ])
+    const todayCount = todayRows[0]?._total ?? 0
+    const customers = todayRows.map(({ _total, ...c }) => c)
+    return res.json({ customers, total: Number(todayCount), grandTotal: Number(allRow.count), page, limit, recent: true })
   }
 
   const offset = (page - 1) * limit
@@ -264,12 +267,13 @@ app.get('/api/customers', auth, h(async (req, res) => {
     where = 'first_name LIKE $1 OR last_name LIKE $2'
     params = [p, p]
   }
-  const { rows: [{ count }] } = await pool.query(`SELECT COUNT(*) as count FROM customers WHERE ${where}`, params)
-  const customers = await db.all(
-    `SELECT * FROM customers WHERE ${where} ORDER BY first_name ASC, last_name ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+  const rows = await db.all(
+    `SELECT *, COUNT(*) OVER() as _total FROM customers WHERE ${where} ORDER BY first_name ASC, last_name ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
     [...params, limit, offset]
   )
-  res.json({ customers, total: Number(count), page, limit })
+  const total = rows[0]?._total ?? 0
+  const customers = rows.map(({ _total, ...c }) => c)
+  res.json({ customers, total: Number(total), page, limit })
 }))
 
 app.post('/api/customers/check-duplicates', auth, h(async (req, res) => {
@@ -391,6 +395,7 @@ app.listen(PORT, '0.0.0.0', () => {
       `)
       await db.query(`CREATE INDEX IF NOT EXISTS idx_trgm_first ON customers USING GIN (first_name gin_trgm_ops)`)
       await db.query(`CREATE INDEX IF NOT EXISTS idx_trgm_last  ON customers USING GIN (last_name  gin_trgm_ops)`)
+      await db.query(`CREATE INDEX IF NOT EXISTS idx_customers_created_at ON customers (created_at)`)
       await db.query(`
         CREATE TABLE IF NOT EXISTS users (
           id SERIAL PRIMARY KEY,
