@@ -221,25 +221,51 @@ function UserManagement({ apiFetch, onClose }) {
 }
 
 // ---- Settings ----
-function Settings({ apiFetch, onClose }) {
+function ProgressBar({ label }) {
+  return (
+    <div className="mt-2">
+      <p className="text-xs text-gray-500 mb-1">{label}</p>
+      <div className="w-full bg-gray-100 rounded-full h-1.5 overflow-hidden">
+        <div className="h-full bg-amber-600 rounded-full animate-[progress_1.2s_ease-in-out_infinite]"
+          style={{ width: '40%', animation: 'indeterminate 1.2s ease-in-out infinite' }} />
+      </div>
+      <style>{`@keyframes indeterminate{0%{transform:translateX(-100%) scaleX(.4)}50%{transform:translateX(60%) scaleX(.6)}100%{transform:translateX(250%) scaleX(.4)}}`}</style>
+    </div>
+  )
+}
+
+function Settings({ apiFetch, onClose, addToast }) {
   const [step, setStep] = useState('idle') // idle | checking | preview | done
   const [preview, setPreview] = useState(null)
   const [dupStep, setDupStep] = useState('idle') // idle | checking | found | confirm | done
   const [dupRows, setDupRows] = useState([])
   const [errors, setErrors] = useState([])
   const [importing, setImporting] = useState(false)
+  const [exporting, setExporting] = useState(false)
   const [result, setResult] = useState(null)
   const fileRef = useRef(null)
 
   function parseCSV(content) {
     const errs = [], customers = []
+    const SKIP = /^(first_name[\s,]|ชื่อ|name|fullname)/i
     content.trim().split('\n').forEach((line, i) => {
       const t = line.trim()
-      if (!t || t.toLowerCase() === 'first_name,last_name') return
+      if (!t || SKIP.test(t)) return
       let fn, ln
-      if (t.includes(',')) { [fn, ln] = t.split(',').map(s => s.trim()) }
-      else { const p = t.split(/\s+/); if (p.length !== 2) { errs.push(`บรรทัด ${i + 1}: "${t}"`); return }; fn = p[0]; ln = p[1] }
-      if (!fn || !ln) { errs.push(`บรรทัด ${i + 1}: ข้อมูลไม่ครบ`); return }
+      if (t.includes(',')) {
+        const parts = t.split(',').map(s => s.trim()).filter(Boolean)
+        if (parts.length === 1) {
+          // single column with comma in header but value has no comma
+          const p = parts[0].split(/\s+/)
+          fn = p[0]; ln = p.slice(1).join(' ')
+        } else {
+          fn = parts[0]; ln = parts.slice(1).join(' ')
+        }
+      } else {
+        const p = t.split(/\s+/)
+        fn = p[0]; ln = p.slice(1).join(' ')
+      }
+      if (!fn || !ln) { errs.push(`บรรทัด ${i + 1}: ไม่พบชื่อหรือนามสกุล "${t}"`); return }
       customers.push({ first_name: fn, last_name: ln })
     })
     return { customers, errors: errs }
@@ -269,20 +295,36 @@ function Settings({ apiFetch, onClose }) {
     setImporting(true)
     try {
       const res = await apiFetch('/api/customers/batch', { method: 'POST', body: JSON.stringify({ customers: preview.unique }) })
-      if (res.ok) { setResult({ added: preview.unique.length, skipped: preview.duplicates.length }); setStep('done') }
+      if (res.ok) {
+        const added = preview.unique.length, skipped = preview.duplicates.length
+        setResult({ added, skipped })
+        setStep('done')
+        addToast(`นำเข้าสำเร็จ · เพิ่ม ${added.toLocaleString()} รายชื่อ${skipped ? ` · ข้าม ${skipped.toLocaleString()} รายชื่อ (ซ้ำ)` : ''}`, 'success')
+      } else {
+        const data = await res.json().catch(() => ({}))
+        addToast(data.error || 'นำเข้าไม่สำเร็จ กรุณาลองใหม่', 'error')
+      }
+    } catch {
+      addToast('เกิดข้อผิดพลาด ไม่สามารถเชื่อมต่อ server ได้', 'error')
     } finally { setImporting(false) }
   }
 
   async function handleExport() {
-    const res = await apiFetch('/api/customers/export')
-    if (!res.ok) return
-    const blob = await res.blob()
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `customers_${new Date().toISOString().slice(0, 10)}.csv`
-    a.click()
-    URL.revokeObjectURL(url)
+    setExporting(true)
+    try {
+      const res = await apiFetch('/api/customers/export')
+      if (!res.ok) { addToast('ดาวน์โหลดไม่สำเร็จ กรุณาลองใหม่', 'error'); return }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `customers_${new Date().toISOString().slice(0, 10)}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      addToast('ดาวน์โหลด CSV สำเร็จ', 'success')
+    } catch {
+      addToast('เกิดข้อผิดพลาด ไม่สามารถดาวน์โหลดได้', 'error')
+    } finally { setExporting(false) }
   }
 
   function resetImport() { setStep('idle'); setPreview(null); setErrors([]); setResult(null); if (fileRef.current) fileRef.current.value = '' }
@@ -297,9 +339,10 @@ function Settings({ apiFetch, onClose }) {
           <div className="bg-white border rounded-xl p-4">
             <p className="text-sm font-medium text-gray-700 mb-0.5">Export ฐานข้อมูล</p>
             <p className="text-xs text-gray-400 mb-3">ดาวน์โหลดรายชื่อทั้งหมดเป็นไฟล์ CSV</p>
-            <button onClick={handleExport} className="bg-amber-700 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-amber-800">
-              ดาวน์โหลด CSV
+            <button onClick={handleExport} disabled={exporting} className="bg-amber-700 text-white px-4 py-1.5 rounded-lg text-sm hover:bg-amber-800 disabled:opacity-50">
+              {exporting ? 'กำลังดาวน์โหลด...' : 'ดาวน์โหลด CSV'}
             </button>
+            {exporting && <ProgressBar label="กำลังเตรียมไฟล์..." />}
           </div>
 
           {/* Import */}
@@ -318,6 +361,7 @@ function Settings({ apiFetch, onClose }) {
                 >
                   {step === 'checking' ? 'กำลังตรวจสอบ...' : 'เลือกไฟล์ CSV'}
                 </button>
+                {step === 'checking' && <ProgressBar label="กำลังตรวจสอบรายชื่อซ้ำ..." />}
               </>
             )}
 
@@ -334,7 +378,7 @@ function Settings({ apiFetch, onClose }) {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={resetImport} className="flex-1 border rounded-lg py-2 text-sm hover:bg-gray-50">ยกเลิก</button>
+                  <button onClick={resetImport} disabled={importing} className="flex-1 border rounded-lg py-2 text-sm hover:bg-gray-50 disabled:opacity-50">ยกเลิก</button>
                   <button
                     onClick={handleImport}
                     disabled={importing || preview.unique.length === 0}
@@ -343,6 +387,7 @@ function Settings({ apiFetch, onClose }) {
                     {importing ? 'กำลังนำเข้า...' : 'ยืนยันนำเข้า'}
                   </button>
                 </div>
+                {importing && <ProgressBar label={`กำลังนำเข้า ${preview.unique.length.toLocaleString()} รายชื่อ...`} />}
               </>
             )}
 
@@ -844,6 +889,12 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
   const [online, setOnline] = useState({ count: 0, users: [] })
   const [toasts, setToasts] = useState([])
   const [grandTotal, setGrandTotal] = useState(0)
+
+  const addToast = useCallback((msg, type = 'info') => {
+    const id = Date.now()
+    setToasts(prev => [...prev, { id, msg, type }])
+    setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 6000)
+  }, [])
   const searchRef = useRef(null)
 
   const focusSearch = () => setTimeout(() => searchRef.current?.focus(), 50)
@@ -885,9 +936,7 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
       try {
         const data = JSON.parse(e.data)
         if (data.by && data.by !== auth.username && data.added) {
-          const id = Date.now()
-          setToasts(prev => [...prev, { id, msg: `${data.by} เพิ่ม ${data.added} รายชื่อ` }])
-          setTimeout(() => setToasts(prev => prev.filter(t => t.id !== id)), 9000)
+          addToast(`${data.by} เพิ่ม ${data.added} รายชื่อ`)
         }
       } catch { /* ignore */ }
     })
@@ -1159,7 +1208,7 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
         <UserManagement apiFetch={apiFetch} onClose={() => setActivePage('menu')} />
       )}
       {activePage === 'settings' && (
-        <Settings apiFetch={apiFetch} onClose={() => setActivePage('menu')} />
+        <Settings apiFetch={apiFetch} onClose={() => setActivePage('menu')} addToast={addToast} />
       )}
       {activePage === 'activity' && (
         <ActivityLog apiFetch={apiFetch} onClose={() => setActivePage('menu')} />
@@ -1169,8 +1218,10 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
       {toasts.length > 0 && (
         <div className="fixed bottom-20 left-0 right-0 z-50 flex flex-col items-end gap-2 px-4 pointer-events-none">
           {toasts.map(t => (
-            <div key={t.id} className="toast-enter bg-stone-800/90 text-white text-sm px-4 py-2 rounded-full shadow-lg backdrop-blur-sm">
-              {t.msg}
+            <div key={t.id} className={`toast-enter text-white text-sm px-4 py-2 rounded-full shadow-lg backdrop-blur-sm ${
+              t.type === 'success' ? 'bg-green-700/90' : t.type === 'error' ? 'bg-red-700/90' : 'bg-stone-800/90'
+            }`}>
+              {t.type === 'success' ? '✓ ' : t.type === 'error' ? '✕ ' : ''}{t.msg}
             </div>
           ))}
         </div>
