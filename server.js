@@ -275,11 +275,19 @@ app.get('/api/customers', auth, h(async (req, res) => {
 app.post('/api/customers/check-duplicates', auth, h(async (req, res) => {
   const list = req.body.customers
   if (!Array.isArray(list)) return res.status(400).json({ error: 'invalid' })
-  const results = await Promise.all(
-    list.map(c => db.oneOrNone(`SELECT id FROM customers WHERE first_name = $1 AND last_name = $2 LIMIT 1`, [c.first_name, c.last_name]))
+  if (list.length === 0) return res.json({ duplicates: [], unique: [] })
+  const values = list.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(',')
+  const params = list.flatMap(c => [c.first_name, c.last_name])
+  const rows = await db.any(
+    `SELECT first_name, last_name FROM customers WHERE (first_name, last_name) IN (${values})`,
+    params
   )
+  const existingSet = new Set(rows.map(r => `${r.first_name}|||${r.last_name}`))
   const duplicates = [], unique = []
-  list.forEach((c, i) => { if (results[i]) duplicates.push(c); else unique.push(c) })
+  list.forEach(c => {
+    if (existingSet.has(`${c.first_name}|||${c.last_name}`)) duplicates.push(c)
+    else unique.push(c)
+  })
   res.json({ duplicates, unique })
 }))
 

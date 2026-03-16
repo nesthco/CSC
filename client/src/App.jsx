@@ -247,15 +247,26 @@ function Settings({ apiFetch, onClose, addToast }) {
 
   function parseCSV(content) {
     const errs = [], customers = []
-    const SKIP = /^(first_name[\s,]|ชื่อ|name|fullname)/i
-    content.trim().split('\n').forEach((line, i) => {
+    const SKIP = /^(id[\s,]|first_name[\s,]|ชื่อ|name|fullname)/i
+    const lines = content.trim().split('\n')
+    // Detect column positions from header if present
+    let fnCol = 0, lnCol = 1, hasHeader = false
+    const firstLine = lines[0]?.trim() || ''
+    if (SKIP.test(firstLine) && firstLine.includes(',')) {
+      const headers = firstLine.split(',').map(s => s.trim().toLowerCase())
+      const fi = headers.indexOf('first_name')
+      const li = headers.indexOf('last_name')
+      if (fi !== -1 && li !== -1) { fnCol = fi; lnCol = li; hasHeader = true }
+    }
+    lines.forEach((line, i) => {
       const t = line.trim()
-      if (!t || SKIP.test(t)) return
+      if (!t || (i === 0 && (hasHeader || SKIP.test(t)))) return
       let fn, ln
       if (t.includes(',')) {
-        const parts = t.split(',').map(s => s.trim()).filter(Boolean)
-        if (parts.length === 1) {
-          // single column with comma in header but value has no comma
+        const parts = t.split(',').map(s => s.trim())
+        if (hasHeader) {
+          fn = parts[fnCol]; ln = parts[lnCol]
+        } else if (parts.filter(Boolean).length === 1) {
           const p = parts[0].split(/\s+/)
           fn = p[0]; ln = p.slice(1).join(' ')
         } else {
@@ -265,6 +276,7 @@ function Settings({ apiFetch, onClose, addToast }) {
         const p = t.split(/\s+/)
         fn = p[0]; ln = p.slice(1).join(' ')
       }
+      fn = fn?.trim(); ln = ln?.trim()
       if (!fn || !ln) { errs.push(`บรรทัด ${i + 1}: ไม่พบชื่อหรือนามสกุล "${t}"`); return }
       customers.push({ first_name: fn, last_name: ln })
     })
