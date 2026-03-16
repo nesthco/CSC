@@ -276,7 +276,7 @@ app.post('/api/customers/check-duplicates', auth, h(async (req, res) => {
   const list = req.body.customers
   if (!Array.isArray(list)) return res.status(400).json({ error: 'invalid' })
   const results = await Promise.all(
-    list.map(c => db.one(`SELECT id FROM customers WHERE first_name = $1 AND last_name = $2 LIMIT 1`, [c.first_name, c.last_name]))
+    list.map(c => db.oneOrNone(`SELECT id FROM customers WHERE first_name = $1 AND last_name = $2 LIMIT 1`, [c.first_name, c.last_name]))
   )
   const duplicates = [], unique = []
   list.forEach((c, i) => { if (results[i]) duplicates.push(c); else unique.push(c) })
