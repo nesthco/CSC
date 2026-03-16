@@ -56,7 +56,7 @@ setInterval(() => {
 }, 30 * 60 * 1000)
 
 app.use(cors())
-app.use(express.json())
+app.use(express.json({ limit: '50mb' }))
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const distPath = join(__dirname, 'client', 'dist')
@@ -276,13 +276,20 @@ app.post('/api/customers/check-duplicates', auth, h(async (req, res) => {
   const list = req.body.customers
   if (!Array.isArray(list)) return res.status(400).json({ error: 'invalid' })
   if (list.length === 0) return res.json({ duplicates: [], unique: [] })
-  const values = list.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(',')
-  const params = list.flatMap(c => [c.first_name, c.last_name])
-  const rows = await db.any(
-    `SELECT first_name, last_name FROM customers WHERE (first_name, last_name) IN (${values})`,
-    params
-  )
-  const existingSet = new Set(rows.map(r => `${r.first_name}|||${r.last_name}`))
+  // PostgreSQL max 65535 params; each record uses 2 params → chunk at 30000
+  const CHUNK = 30000
+  const existingRows = []
+  for (let i = 0; i < list.length; i += CHUNK) {
+    const chunk = list.slice(i, i + CHUNK)
+    const values = chunk.map((_, j) => `($${j * 2 + 1}, $${j * 2 + 2})`).join(',')
+    const params = chunk.flatMap(c => [c.first_name, c.last_name])
+    const rows = await db.all(
+      `SELECT first_name, last_name FROM customers WHERE (first_name, last_name) IN (${values})`,
+      params
+    )
+    existingRows.push(...rows)
+  }
+  const existingSet = new Set(existingRows.map(r => `${r.first_name}|||${r.last_name}`))
   const duplicates = [], unique = []
   list.forEach(c => {
     if (existingSet.has(`${c.first_name}|||${c.last_name}`)) duplicates.push(c)
@@ -298,8 +305,13 @@ app.post('/api/customers/batch', auth, h(async (req, res) => {
   try {
     await client.query('BEGIN')
     const ts = now()
-    for (const { first_name, last_name } of list) {
-      await client.query(`INSERT INTO customers (first_name, last_name, created_by, created_at) VALUES ($1, $2, $3, $4)`, [first_name, last_name, req.user.username, ts])
+    // Bulk INSERT in chunks of 5000 rows (4 params each = 20000 params < 65535 limit)
+    const CHUNK = 5000
+    for (let i = 0; i < list.length; i += CHUNK) {
+      const chunk = list.slice(i, i + CHUNK)
+      const vals = chunk.map((_, j) => `($${j * 4 + 1}, $${j * 4 + 2}, $${j * 4 + 3}, $${j * 4 + 4})`).join(',')
+      const params = chunk.flatMap(({ first_name, last_name }) => [first_name, last_name, req.user.username, ts])
+      await client.query(`INSERT INTO customers (first_name, last_name, created_by, created_at) VALUES ${vals}`, params)
     }
     await client.query('COMMIT')
     broadcast({ by: req.user.username, added: list.length })
