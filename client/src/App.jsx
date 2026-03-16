@@ -73,7 +73,7 @@ function Login({ onLogin }) {
   return (
     <div className="min-h-screen bg-stone-100 flex items-center justify-center px-4">
       <div className="bg-white rounded-xl shadow-lg w-full max-w-sm p-8">
-        <h1 className="text-xl font-bold text-red-900 mb-1 text-center">CustomerList</h1>
+        <h1 className="text-xl font-bold text-red-900 mb-1 text-center">CSC ระบบลูกค้าสัมพันธ์</h1>
         <p className="text-xs text-gray-400 text-center mb-6">กรุณาเข้าสู่ระบบ</p>
         {error && <p className="text-red-500 text-sm mb-4 bg-red-50 rounded-lg px-3 py-2">{error}</p>}
         <div className="space-y-3">
