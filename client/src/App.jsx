@@ -4,24 +4,6 @@ const API = '/api/customers'
 const LIMIT = 50
 
 // ---- Stats Ticker ----
-function StatsBar({ stats }) {
-  if (!stats) return null
-
-  const text = [
-    `วันนี้  ${stats.today.toLocaleString()} รายชื่อ`,
-    `สัปดาห์นี้  ${stats.week.toLocaleString()} รายชื่อ`,
-    `เดือนนี้  ${stats.month.toLocaleString()} รายชื่อ`,
-  ].join('          ✦          ')
-
-  return (
-    <div className="bg-red-950 text-amber-200 text-xs py-1.5 overflow-hidden select-none">
-      <div style={{ display: 'flex', animation: 'marquee 45s linear infinite', willChange: 'transform' }}>
-        <span className="whitespace-nowrap px-20">{text}</span>
-        <span className="whitespace-nowrap px-20" aria-hidden>{text}</span>
-      </div>
-    </div>
-  )
-}
 
 function parseLines(text) {
   const errors = []
@@ -640,116 +622,82 @@ export default function App() {
   return <CustomerApp auth={auth} apiFetch={apiFetch} onLogout={handleLogout} />
 }
 
+// ---- Leaderboard Card (shared) ----
+const RANK_STYLE = [
+  { bar: 'from-red-400 to-rose-500', badge: 'bg-red-500', icon: '🔥', label: 'text-red-600' },
+  { bar: 'from-orange-400 to-amber-400', badge: 'bg-orange-400', icon: '😅', label: 'text-orange-600' },
+  { bar: 'from-yellow-400 to-yellow-500', badge: 'bg-yellow-400', icon: '😬', label: 'text-yellow-600' },
+  { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
+  { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
+]
+
+function LeaderboardCard({ title, rows }) {
+  if (rows === null) {
+    return (
+      <div className="rounded-xl overflow-hidden border border-stone-200 shadow-sm animate-pulse">
+        <div className="bg-stone-700 px-3 py-1.5 h-7" />
+        <div className="bg-white divide-y divide-stone-100">
+          {[...Array(3)].map((_, i) => (
+            <div key={i} className="px-3 py-1.5 flex items-center gap-2">
+              <div className="w-5 h-5 rounded-full bg-stone-200 shrink-0" />
+              <div className="flex-1 h-3 rounded bg-stone-200" />
+              <div className="w-8 h-3 rounded bg-stone-200 shrink-0" />
+              <div className="w-20 h-1.5 rounded-full bg-stone-200 shrink-0" />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
+  if (rows.length === 0) return null
+  const max = Number(rows[0].count)
+  const last = rows.length - 1
+  return (
+    <div className="rounded-xl overflow-hidden border border-stone-200 shadow-sm">
+      <div className="bg-gradient-to-r from-stone-800 to-stone-700 px-3 py-1.5 flex items-center justify-between">
+        <span className="text-xs font-semibold text-amber-300 tracking-wide uppercase">{title}</span>
+        <span className="text-xs text-stone-400">{rows.length} คน</span>
+      </div>
+      <div className="bg-white divide-y divide-stone-100">
+        {rows.map((u, i) => {
+          const pct = max > 0 ? Math.round((Number(u.count) / max) * 100) : 0
+          const isWinner = i === last
+          const s = RANK_STYLE[i] || RANK_STYLE[4]
+          return (
+            <div key={u.created_by} className={`px-3 py-1.5 ${isWinner ? 'bg-emerald-50' : ''}`}>
+              <div className="flex items-center gap-2">
+                <span className={`w-5 h-5 rounded-full ${isWinner ? 'bg-emerald-500' : s.badge} text-white text-xs font-bold flex items-center justify-center shrink-0`}>
+                  {isWinner ? '🏆' : (s.icon || i + 1)}
+                </span>
+                <span className={`flex-1 text-xs font-semibold truncate ${isWinner ? 'text-emerald-700' : 'text-stone-700'}`}>{u.created_by}</span>
+                <span className={`text-xs font-bold shrink-0 ${isWinner ? 'text-emerald-600' : s.label}`}>{Number(u.count).toLocaleString()}</span>
+                <div className="w-20 h-1.5 bg-stone-100 rounded-full overflow-hidden shrink-0">
+                  <div
+                    className={`h-full rounded-full bg-gradient-to-r ${isWinner ? 'from-emerald-400 to-green-500' : s.bar} transition-all`}
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
 function ActivityLog({ apiFetch, onClose }) {
-  const [logs, setLogs] = useState([])
-  const [todayByUser, setTodayByUser] = useState([])
-  const [weekly, setWeekly] = useState([])
+  const [logs, setLogs] = useState(null)
 
   useEffect(() => {
     apiFetch('/api/admin/logs').then(r => r.ok && r.json()).then(d => d && setLogs(d))
-    apiFetch('/api/stats').then(r => r.ok && r.json()).then(d => d && setTodayByUser(d.todayByUser || []))
-    apiFetch('/api/stats/weekly').then(r => r.ok && r.json()).then(d => d && setWeekly(d))
   }, [apiFetch])
 
   return (
     <div className="fixed inset-0 bg-stone-100 z-40 flex flex-col">
       <PageHeader title="ประวัติกิจกรรม" onBack={onClose} />
       <main className="flex-1 overflow-y-auto" style={{ paddingBottom: '4.5rem' }}>
-        <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
-
-          {/* Weekly leaderboard */}
-          {weekly.length > 0 && (() => {
-            const rows = weekly
-            const max = Number(rows[0].count)
-            const last = rows.length - 1
-            const rankStyle = [
-              { bar: 'from-red-400 to-rose-500', badge: 'bg-red-500', icon: '🔥', label: 'text-red-600' },
-              { bar: 'from-orange-400 to-amber-400', badge: 'bg-orange-400', icon: '😅', label: 'text-orange-600' },
-              { bar: 'from-yellow-400 to-yellow-500', badge: 'bg-yellow-400', icon: '😬', label: 'text-yellow-600' },
-              { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
-              { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
-            ]
-            return (
-              <div className="rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
-                <div className="bg-gradient-to-r from-stone-800 to-stone-700 px-4 py-2.5 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-amber-300 tracking-wide uppercase">ปริมาณรายชื่อ 7 วันล่าสุด</span>
-                  <span className="text-xs text-stone-400">{rows.length} คน</span>
-                </div>
-                <div className="bg-white divide-y divide-stone-100">
-                  {rows.map((u, i) => {
-                    const pct = max > 0 ? Math.round((Number(u.count) / max) * 100) : 0
-                    const isWinner = i === last
-                    const s = rankStyle[i] || rankStyle[4]
-                    return (
-                      <div key={u.created_by} className={`px-4 py-3 ${isWinner ? 'bg-emerald-50' : ''}`}>
-                        <div className="flex items-center gap-3 mb-1.5">
-                          <span className={`w-6 h-6 rounded-full ${isWinner ? 'bg-emerald-500' : s.badge} text-white text-xs font-bold flex items-center justify-center shrink-0`}>
-                            {isWinner ? '🏆' : (s.icon || i + 1)}
-                          </span>
-                          <span className={`flex-1 text-sm font-semibold truncate ${isWinner ? 'text-emerald-700' : 'text-stone-700'}`}>{u.created_by}</span>
-                          <span className={`text-sm font-bold shrink-0 ${isWinner ? 'text-emerald-600' : s.label}`}>{Number(u.count).toLocaleString()}</span>
-                        </div>
-                        <div className="h-2 bg-stone-100 rounded-full overflow-hidden ml-9">
-                          <div
-                            className={`h-full rounded-full bg-gradient-to-r ${isWinner ? 'from-emerald-400 to-green-500' : s.bar} transition-all`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Today by user */}
-          {todayByUser.length > 0 && (() => {
-            const rows = todayByUser
-            const max = Number(rows[0].count)
-            const last = rows.length - 1
-            const rankStyle = [
-              { bar: 'from-red-400 to-rose-500', badge: 'bg-red-500', icon: '🔥', label: 'text-red-600' },
-              { bar: 'from-orange-400 to-amber-400', badge: 'bg-orange-400', icon: '😅', label: 'text-orange-600' },
-              { bar: 'from-yellow-400 to-yellow-500', badge: 'bg-yellow-400', icon: '😬', label: 'text-yellow-600' },
-              { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
-              { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
-            ]
-            return (
-              <div className="rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
-                <div className="bg-gradient-to-r from-stone-800 to-stone-700 px-4 py-2.5 flex items-center justify-between">
-                  <span className="text-xs font-semibold text-amber-300 tracking-wide uppercase">ปริมาณรายชื่อวันนี้</span>
-                  <span className="text-xs text-stone-400">{rows.length} คน</span>
-                </div>
-                <div className="bg-white divide-y divide-stone-100">
-                  {rows.map((u, i) => {
-                    const pct = max > 0 ? Math.round((Number(u.count) / max) * 100) : 0
-                    const isWinner = i === last
-                    const s = rankStyle[i] || rankStyle[4]
-                    return (
-                      <div key={u.created_by} className={`px-4 py-3 ${isWinner ? 'bg-emerald-50' : ''}`}>
-                        <div className="flex items-center gap-3 mb-1.5">
-                          <span className={`w-6 h-6 rounded-full ${isWinner ? 'bg-emerald-500' : s.badge} text-white text-xs font-bold flex items-center justify-center shrink-0`}>
-                            {isWinner ? '🏆' : (s.icon || i + 1)}
-                          </span>
-                          <span className={`flex-1 text-sm font-semibold truncate ${isWinner ? 'text-emerald-700' : 'text-stone-700'}`}>{u.created_by}</span>
-                          <span className={`text-sm font-bold shrink-0 ${isWinner ? 'text-emerald-600' : s.label}`}>{Number(u.count).toLocaleString()}</span>
-                        </div>
-                        <div className="h-2 bg-stone-100 rounded-full overflow-hidden ml-9">
-                          <div
-                            className={`h-full rounded-full bg-gradient-to-r ${isWinner ? 'from-emerald-400 to-green-500' : s.bar} transition-all`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })()}
-
-          {/* Log table */}
+        <div className="max-w-4xl mx-auto px-4 py-4">
           <div className="bg-white border rounded-xl overflow-hidden">
             <table className="w-full text-xs">
               <thead className="bg-gray-50 border-b sticky top-0">
@@ -760,24 +708,30 @@ function ActivityLog({ apiFetch, onClose }) {
                 </tr>
               </thead>
               <tbody>
-                {logs.length === 0
-                  ? <tr><td colSpan={3} className="text-center py-6 text-gray-400">ยังไม่มีกิจกรรม</td></tr>
-                  : logs.map(log => (
-                    <tr key={log.id} className="border-t">
-                      <td className="px-3 py-2 font-medium text-gray-700">{log.username}</td>
-                      <td className="px-3 py-2">
-                        <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${log.action === 'login' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
-                          {log.action === 'login' ? 'เข้าสู่ระบบ' : 'ออกจากระบบ'}
-                        </span>
-                      </td>
-                      <td className="px-3 py-2 text-gray-500">{log.created_at}</td>
+                {logs === null ? (
+                  [...Array(5)].map((_, i) => (
+                    <tr key={i} className="border-t animate-pulse">
+                      <td className="px-3 py-2"><div className="h-3 w-16 rounded bg-stone-200" /></td>
+                      <td className="px-3 py-2"><div className="h-5 w-20 rounded-full bg-stone-200" /></td>
+                      <td className="px-3 py-2"><div className="h-3 w-24 rounded bg-stone-200" /></td>
                     </tr>
                   ))
-                }
+                ) : logs.length === 0 ? (
+                  <tr><td colSpan={3} className="text-center py-6 text-gray-400">ยังไม่มีกิจกรรม</td></tr>
+                ) : logs.map(log => (
+                  <tr key={log.id} className="border-t">
+                    <td className="px-3 py-2 font-medium text-gray-700">{log.username}</td>
+                    <td className="px-3 py-2">
+                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${log.action === 'login' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'}`}>
+                        {log.action === 'login' ? 'เข้าสู่ระบบ' : 'ออกจากระบบ'}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-500">{log.created_at}</td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-
         </div>
       </main>
     </div>
@@ -785,14 +739,54 @@ function ActivityLog({ apiFetch, onClose }) {
 }
 
 // ---- Menu Page ----
-function MenuPage({ auth, onNavigate, onLogout }) {
+function MenuPage({ auth, apiFetch, onNavigate, onLogout, grandTotal }) {
   const [confirmLogout, setConfirmLogout] = useState(false)
+  const [stats, setStats] = useState(null)
+  const [weekly, setWeekly] = useState(null)
+
+  useEffect(() => {
+    apiFetch('/api/stats').then(r => r.ok && r.json()).then(d => d && setStats(d))
+    apiFetch('/api/stats/weekly').then(r => r.ok && r.json()).then(d => d && setWeekly(d))
+  }, [apiFetch])
 
   return (
     <div className="fixed inset-0 bg-stone-100 z-40 flex flex-col">
       <PageHeader title="เมนู" onBack={() => onNavigate(null)} />
       <main className="flex-1 overflow-y-auto" style={{ paddingBottom: '4.5rem' }}>
-        <div className="max-w-4xl mx-auto px-4 py-4 space-y-4">
+        <div className="max-w-4xl mx-auto px-4 py-4 space-y-3">
+
+          {/* Stats summary */}
+          <div className="rounded-xl overflow-hidden border border-stone-200 shadow-sm">
+            <div className="grid grid-cols-3 divide-x divide-stone-200 bg-white">
+              {stats === null ? (
+                [...Array(3)].map((_, i) => (
+                  <div key={i} className="flex flex-col items-center py-2 gap-1 animate-pulse">
+                    <div className="w-10 h-2 rounded bg-stone-200" />
+                    <div className="w-14 h-3.5 rounded bg-stone-200" />
+                  </div>
+                ))
+              ) : (
+                <>
+                  <div className="flex flex-col items-center py-2">
+                    <span className="text-[10px] text-stone-400 uppercase tracking-wide">วันนี้</span>
+                    <span className="text-sm font-bold text-red-700">{Number(stats.today).toLocaleString()}</span>
+                  </div>
+                  <div className="flex flex-col items-center py-2">
+                    <span className="text-[10px] text-stone-400 uppercase tracking-wide">7 วัน</span>
+                    <span className="text-sm font-bold text-stone-700">{Number(stats.week).toLocaleString()}</span>
+                  </div>
+                  <div className="flex flex-col items-center py-2">
+                    <span className="text-[10px] text-stone-400 uppercase tracking-wide">ทั้งหมด</span>
+                    <span className="text-sm font-bold text-stone-700">{grandTotal.toLocaleString()}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Leaderboards */}
+          <LeaderboardCard title="ปริมาณรายชื่อวันนี้" rows={stats === null ? null : (stats.todayByUser?.slice(0, 5) ?? [])} />
+          <LeaderboardCard title="ปริมาณรายชื่อ 7 วันล่าสุด" rows={weekly} />
 
           {/* Account info */}
           <div className="bg-white border rounded-xl overflow-hidden">
@@ -897,8 +891,7 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
   const [deleteId, setDeleteId] = useState(null)
   const [activePage, setActivePage] = useState(null) // null | 'menu' | 'users' | 'activity' | 'settings'
   const [stats, setStats] = useState(null)
-  const [lastUpdated, setLastUpdated] = useState(null)
-  const [online, setOnline] = useState({ count: 0, users: [] })
+  const [online, setOnline] = useState(null)
   const [toasts, setToasts] = useState([])
   const [grandTotal, setGrandTotal] = useState(0)
 
@@ -922,7 +915,6 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
       setCustomers(data.customers)
       setTotal(data.total)
       if (data.grandTotal !== undefined) setGrandTotal(data.grandTotal)
-      setLastUpdated(new Date())
     } catch { /* ignore */ } finally {
       setLoading(false)
     }
@@ -1021,31 +1013,71 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
 
   return (
     <div className="min-h-screen bg-stone-100">
-      <StatsBar stats={stats} />
       <header className="bg-red-900 shadow-md">
-        <div className="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
-          <h1 className="text-lg font-bold text-amber-100">รายชื่อลูกค้า</h1>
-          <div className="flex items-center gap-2">
-            <span className={`text-xs px-2 py-0.5 rounded-full ${auth.role === 'admin' ? 'bg-amber-600 text-white' : 'bg-red-800 text-red-200'}`}>
+        <div className="max-w-4xl mx-auto px-3 py-2 flex items-center justify-between">
+          <h1 className="text-sm font-bold text-amber-100">รายชื่อลูกค้า</h1>
+          <div className="flex items-center gap-1.5">
+            <span className={`text-xs px-1.5 py-0.5 rounded-full ${auth.role === 'admin' ? 'bg-amber-600 text-white' : 'bg-red-800 text-red-200'}`}>
               {auth.role === 'admin' ? 'Admin' : 'User'}
             </span>
-            <span className="text-sm text-amber-200 font-medium">{auth.username}</span>
+            <span className="text-xs text-amber-200 font-medium">{auth.username}</span>
           </div>
         </div>
       </header>
 
       <main className="max-w-4xl mx-auto px-3 sm:px-4 py-4 sm:py-6" style={{ paddingBottom: '4.5rem' }}>
-        {online.users.length > 0 && (
-          <div className="flex items-center gap-2 flex-wrap mb-4">
-            <span className="text-xs text-stone-400 shrink-0">ออนไลน์ตอนนี้</span>
-            {online.users.map(user => (
-              <span key={user} className="flex items-center gap-1.5 bg-green-50 border border-green-200 text-green-800 text-xs font-medium px-2.5 py-1 rounded-full">
-                <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 animate-pulse"></span>
-                {user}
-              </span>
-            ))}
+        {/* 1. Online users */}
+        {online === null ? (
+          <div className="flex items-center gap-1.5 mb-3 animate-pulse">
+            <div className="w-1.5 h-1.5 rounded-full bg-stone-300 shrink-0" />
+            <div className="w-32 h-2.5 rounded bg-stone-200" />
+          </div>
+        ) : online.users.length > 0 && (
+          <div className="flex items-center gap-1.5 mb-3 text-xs text-stone-600">
+            <span className="w-1.5 h-1.5 rounded-full bg-green-400 shrink-0 animate-pulse"></span>
+            <span>{online.users.join(', ')}</span>
           </div>
         )}
+
+        {/* 2. Stats card */}
+        {!search && (
+          <div className="mb-3 rounded-xl overflow-hidden border border-stone-200 shadow-sm">
+            <div className="grid grid-cols-3 divide-x divide-stone-200 bg-white">
+              {stats === null ? (
+                [...Array(3)].map((_, i) => (
+                  <div key={i} className="flex flex-col items-center py-2 gap-1 animate-pulse">
+                    <div className="w-10 h-2 rounded bg-stone-200" />
+                    <div className="w-14 h-3.5 rounded bg-stone-200" />
+                  </div>
+                ))
+              ) : (
+                <>
+                  <div className="flex flex-col items-center py-2">
+                    <span className="text-[10px] text-stone-400 uppercase tracking-wide">วันนี้</span>
+                    <span className="text-sm font-bold text-red-700">{total.toLocaleString()}</span>
+                  </div>
+                  <div className="flex flex-col items-center py-2">
+                    <span className="text-[10px] text-stone-400 uppercase tracking-wide">7 วัน</span>
+                    <span className="text-sm font-bold text-stone-700">{stats?.week?.toLocaleString() ?? '—'}</span>
+                  </div>
+                  <div className="flex flex-col items-center py-2">
+                    <span className="text-[10px] text-stone-400 uppercase tracking-wide">ทั้งหมด</span>
+                    <span className="text-sm font-bold text-stone-700">{grandTotal.toLocaleString()}</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 3. ปริมาณรายชื่อวันนี้ */}
+        {!search && (
+          <div className="mb-3">
+            <LeaderboardCard title="ปริมาณรายชื่อวันนี้" rows={stats === null ? null : (stats.todayByUser?.slice(0, 5) ?? [])} />
+          </div>
+        )}
+
+        {/* 4. Search box */}
         <div className="mb-4">
           <div className="relative w-full">
             <input
@@ -1082,65 +1114,11 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
           </div>
         </div>
 
-        {!search && stats?.todayByUser?.length > 0 && (() => {
-          const rows = stats.todayByUser.slice(0, 5)
-          const max = Number(rows[0].count)
-          const last = rows.length - 1
-          const rankStyle = [
-            { bar: 'from-red-400 to-rose-500', badge: 'bg-red-500', icon: '🔥', label: 'text-red-600' },
-            { bar: 'from-orange-400 to-amber-400', badge: 'bg-orange-400', icon: '😅', label: 'text-orange-600' },
-            { bar: 'from-yellow-400 to-yellow-500', badge: 'bg-yellow-400', icon: '😬', label: 'text-yellow-600' },
-            { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
-            { bar: 'from-sky-300 to-blue-400', badge: 'bg-sky-400', icon: null, label: 'text-sky-600' },
-          ]
-          return (
-            <div className="mb-3 rounded-2xl overflow-hidden border border-stone-200 shadow-sm">
-              <div className="bg-gradient-to-r from-stone-800 to-stone-700 px-4 py-2.5 flex items-center justify-between">
-                <span className="text-xs font-semibold text-amber-300 tracking-wide uppercase">ปริมาณรายชื่อวันนี้</span>
-                <span className="text-xs text-stone-400">{rows.length} คน</span>
-              </div>
-              <div className="bg-white divide-y divide-stone-100">
-                {rows.map((u, i) => {
-                  const pct = max > 0 ? Math.round((Number(u.count) / max) * 100) : 0
-                  const isWinner = i === last
-                  const s = rankStyle[i] || rankStyle[4]
-                  return (
-                    <div key={u.created_by} className={`px-4 py-3 ${isWinner ? 'bg-emerald-50' : ''}`}>
-                      <div className="flex items-center gap-3 mb-1.5">
-                        <span className={`w-6 h-6 rounded-full ${isWinner ? 'bg-emerald-500' : s.badge} text-white text-xs font-bold flex items-center justify-center shrink-0`}>
-                          {isWinner ? '🏆' : (s.icon || i + 1)}
-                        </span>
-                        <span className={`flex-1 text-sm font-semibold truncate ${isWinner ? 'text-emerald-700' : 'text-stone-700'}`}>{u.created_by}</span>
-                        <span className={`text-sm font-bold shrink-0 ${isWinner ? 'text-emerald-600' : s.label}`}>{Number(u.count).toLocaleString()}</span>
-                      </div>
-                      <div className="h-2 bg-stone-100 rounded-full overflow-hidden ml-9">
-                        <div
-                          className={`h-full rounded-full bg-gradient-to-r ${isWinner ? 'from-emerald-400 to-green-500' : s.bar} transition-all`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          )
-        })()}
-
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-3 gap-0.5">
-          <div className="text-sm text-gray-500">
-            {!search ? (
-              <>เพิ่มวันนี้ <span className="font-semibold text-gray-700">{total.toLocaleString()}</span> รายชื่อ · จากทั้งหมด <span className="font-semibold text-gray-700">{grandTotal.toLocaleString()}</span> รายชื่อ</>
-            ) : (
-              <>พบ <span className="font-semibold text-gray-700">{total.toLocaleString()}</span> รายชื่อ · ค้นหา "{search}"</>
-            )}
+        {search && (
+          <div className="text-xs text-gray-500 mb-3">
+            พบ <span className="font-semibold text-gray-700">{total.toLocaleString()}</span> รายชื่อ · "{search}"
           </div>
-          {lastUpdated && (
-            <span className="text-xs text-gray-400">
-              อัปเดตล่าสุด {lastUpdated.toLocaleTimeString('th-TH')}
-            </span>
-          )}
-        </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-sm border overflow-hidden">
           <table className="w-full text-xs">
@@ -1214,7 +1192,7 @@ function CustomerApp({ auth, apiFetch, onLogout }) {
       )}
 
       {activePage === 'menu' && (
-        <MenuPage auth={auth} onNavigate={setActivePage} onLogout={onLogout} />
+        <MenuPage auth={auth} apiFetch={apiFetch} onNavigate={setActivePage} onLogout={onLogout} grandTotal={grandTotal} />
       )}
       {activePage === 'users' && (
         <UserManagement apiFetch={apiFetch} onClose={() => setActivePage('menu')} />
